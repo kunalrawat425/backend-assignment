@@ -356,6 +356,46 @@ When `job:fetch` is fetching paginated records from Stripe, HubSpot, or Google C
 
 ---
 
+## 🧩 Vendor-Specific Integration Details (Keys & Components)
+
+We have mapped the integration files, components, and key configurations for each external vendor:
+
+### 1. Stripe Ingestion (Payments & Refunds)
+* **Environment Variables (`.env`)**:
+  * `STRIPE_ENABLED`: Enables or disables the Stripe connector.
+  * `STRIPE_API_KEY`: Restricted Stripe API Key format `sk_test_...` (Bearer token authentication).
+  * `STRIPE_WEBHOOK_SECRET`: Webhook signing secret `whsec_...` (hmac signature verification).
+* **Authentication Method**: Token-based bearer authentication via the official Stripe Node library.
+* **Component Map**:
+  * **Connector Class**: [stripe.connector.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/connectors/stripe/stripe.connector.ts) (fetches incremental payments using `created` range filters, and full dumps).
+  * **Normalizer Class**: [stripe.normalizer.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/stripe.normalizer.ts) (converts charges and refunds to unified payment models).
+  * **Status Map**: [stripe.map.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/status/maps/stripe.map.ts) & [stripe.refund.map.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/status/maps/stripe.refund.map.ts) (maps raw payment status fields like `succeeded` to unified `COLLECTED`).
+  * **Webhook Ingress**: [webhook.controller.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/api/ingest/webhook.controller.ts) (routes incoming webhooks to transaction-safe outbox slots).
+
+### 2. HubSpot Ingestion (Deals/Payments & Contacts)
+* **Environment Variables (`.env`)**:
+  * `HUBSPOT_ENABLED`: Enables or disables the HubSpot connector.
+  * `HUBSPOT_ACCESS_TOKEN`: Private App Access Token format `pat-na1-...` or `pat-na2-...` (Bearer authentication).
+* **Authentication Method**: Private App token authentication using standard HTTP headers against the HubSpot CRM API v3.
+* **Component Map**:
+  * **Connector Class**: [hubspot.connector.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/connectors/hubspot/hubspot.connector.ts) (polls CRM deals/contacts sequentially, querying for updates since the last cursor timestamp).
+  * **Normalizer Class**: [hubspot.normalizer.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/hubspot.normalizer.ts) (converts CRM Deal properties to `UnifiedPayment` and Contacts to `UnifiedContact`).
+  * **Status Map**: [hubspot.map.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/status/maps/hubspot.map.ts) (maps CRM pipeline stages like `closedwon` or `completed` to unified `COLLECTED` status).
+
+### 3. Google Calendar Ingestion (Events & Calendar Feeds)
+* **Environment Variables (`.env`)**:
+  * `GCAL_ENABLED`: Enables or disables the Google Calendar connector.
+  * `GOOGLE_CLIENT_EMAIL`: Service Account Email address (e.g. `svc-account@project.iam.gserviceaccount.com`).
+  * `GOOGLE_PRIVATE_KEY`: Service Account RSA PEM Private Key contents.
+  * `GOOGLE_CALENDAR_ID`: Target calendar identifier (defaults to `primary`).
+* **Authentication Method**: JWT oauth2 client auth using Google Node APIs library (`googleapis`).
+* **Component Map**:
+  * **Connector Class**: [gcal.connector.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/connectors/gcal/gcal.connector.ts) (performs incremental listing using resource `syncToken` cursors, and full listing using pagination parameters).
+  * **Normalizer Class**: [gcal.normalizer.ts](file:///Users/kunalrawat/conductor/repos/backend-assignment/src/normalizers/gcal.normalizer.ts) (maps calendar events to the `UnifiedEvent` model).
+  * **Status Map**: *None* (Google Calendar processes events, which do not contribute directly to payment metrics).
+
+---
+
 ## 🛡️ Component Downtime & Fault Tolerance Matrix
 
 What happens when parts of the system go down?
