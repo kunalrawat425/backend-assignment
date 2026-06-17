@@ -257,6 +257,92 @@
       ]
     },
     {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "GET /metrics/revenue/summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue/summary?startDate=2026-06-15&endDate=2026-06-18",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue", "summary"],
+              "query": [
+                { "key": "startDate", "value": "2026-06-15" },
+                { "key": "endDate", "value": "2026-06-18" },
+                { "key": "source", "value": "", "disabled": true }
+              ]
+            },
+            "header": [
+              { "key": "X-Api-Key", "value": "{{API_KEY}}" }
+            ]
+          },
+          "response": [
+            {
+              "name": "200 summary response",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"totalRevenueCents\": \"20000\", \"currency\": \"USD\", \"count\": 2, \"startDate\": \"2026-06-15\", \"endDate\": \"2026-06-18\", \"source\": null }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue/daily",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue/daily?startDate=2026-06-15&endDate=2026-06-18",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue", "daily"],
+              "query": [
+                { "key": "startDate", "value": "2026-06-15" },
+                { "key": "endDate", "value": "2026-06-18" },
+                { "key": "source", "value": "", "disabled": true }
+              ]
+            },
+            "header": [
+              { "key": "X-Api-Key", "value": "{{API_KEY}}" }
+            ]
+          },
+          "response": [
+            {
+              "name": "200 daily response",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"totalRevenueCents\": \"20000\", \"currency\": \"USD\", \"breakdown\": [{ \"date\": \"2026-06-17\", \"amountCents\": \"15000\", \"count\": 1 }, { \"date\": \"2026-06-16\", \"amountCents\": \"5000\", \"count\": 1 }], \"startDate\": \"2026-06-15\", \"endDate\": \"2026-06-18\", \"source\": null }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue/weekly",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue/weekly?startDate=2026-06-15&endDate=2026-06-18",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue", "weekly"],
+              "query": [
+                { "key": "startDate", "value": "2026-06-15" },
+                { "key": "endDate", "value": "2026-06-18" },
+                { "key": "source", "value": "", "disabled": true }
+              ]
+            },
+            "header": [
+              { "key": "X-Api-Key", "value": "{{API_KEY}}" }
+            ]
+          },
+          "response": [
+            {
+              "name": "200 weekly response",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"totalRevenueCents\": \"20000\", \"currency\": \"USD\", \"breakdown\": [{ \"weekStartDate\": \"2026-06-15\", \"amountCents\": \"20000\", \"count\": 2 }], \"startDate\": \"2026-06-15\", \"endDate\": \"2026-06-18\", \"source\": null }"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Webhooks",
       "item": [
         {

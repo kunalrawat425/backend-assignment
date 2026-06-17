@@ -2,22 +2,15 @@ import { PaymentStatus } from '../types/enums';
 import { getPrisma } from '../db/db.service';
 import { withDbRetry } from '../db/retry-policy.service';
 
-export interface RevenueSummary {
+export interface RevenueResult {
   totalRevenueCents: bigint;
   currency: string;
   count: number;
-}
-
-export interface RevenueBreakdownEntry {
-  date: string; // YYYY-MM-DD
-  amountCents: bigint;
-  count: number;
-}
-
-export interface RevenueBreakdown {
-  totalRevenueCents: bigint;
-  currency: string;
-  breakdown: RevenueBreakdownEntry[];
+  breakdown: Array<{
+    date: string;
+    amountCents: bigint;
+    count: number;
+  }>;
 }
 
 export class RevenueService {
@@ -28,10 +21,17 @@ export class RevenueService {
   ];
 
   /**
-   * Computes the total collected revenue.
-   * This is the single, canonical SQL logic for revenue.
+   * Single unified entrypoint to compute revenue.
+   * Parameterizes the grouping view ('summary' | 'daily' | 'weekly') while sharing
+   * the exact same query construction, database constraints, and total calculations.
+   * The total aggregate is included in the response for all breakdown views.
    */
-  static async computeCollected(startDate?: Date, endDate?: Date, source?: string): Promise<RevenueSummary> {
+  static async computeRevenue(
+    view: 'summary' | 'daily' | 'weekly',
+    startDate?: Date,
+    endDate?: Date,
+    source?: string,
+  ): Promise<RevenueResult> {
     const where: any = {
       status: { in: this.ALLOWED_REVENUE_STATUSES },
     };
@@ -50,7 +50,8 @@ export class RevenueService {
       }
     }
 
-    const result = await withDbRetry(() =>
+    // 1. Fetch total aggregate (always run this canonical DB check)
+    const summary = await withDbRetry(() =>
       getPrisma().payment.aggregate({
         where,
         _sum: { amountCents: true },
@@ -58,37 +59,19 @@ export class RevenueService {
       }),
     );
 
-    return {
-      totalRevenueCents: result._sum.amountCents ?? 0n,
-      currency: 'USD',
-      count: result._count.id,
-    };
-  }
+    const totalRevenueCents = summary._sum.amountCents ?? 0n;
+    const totalCount = summary._count.id;
 
-  /**
-   * Computes the daily breakdown of collected revenue.
-   * We assert that the sum of the daily breakdown matches computeCollected() exactly.
-   */
-  static async computeDailyBreakdown(startDate?: Date, endDate?: Date, source?: string): Promise<RevenueBreakdown> {
-    const where: any = {
-      status: { in: this.ALLOWED_REVENUE_STATUSES },
-    };
-
-    if (source) {
-      where.source = source;
+    if (view === 'summary') {
+      return {
+        totalRevenueCents,
+        currency: 'USD',
+        count: totalCount,
+        breakdown: [],
+      };
     }
 
-    if (startDate || endDate) {
-      where.occurredAt = {};
-      if (startDate) {
-        where.occurredAt.gte = startDate;
-      }
-      if (endDate) {
-        where.occurredAt.lte = endDate;
-      }
-    }
-
-    // Fetch matching payments and group in memory to ensure 100% data consistency
+    // 2. Fetch payments to build daily/weekly grouping (identical where constraints)
     const payments = await withDbRetry(() =>
       getPrisma().payment.findMany({
         where,
@@ -98,108 +81,59 @@ export class RevenueService {
     );
 
     const breakdownMap = new Map<string, { amountCents: bigint; count: number }>();
-    let totalCents = 0n;
+    let checksumCents = 0n;
 
     for (const p of payments) {
-      const dateStr = p.occurredAt.toISOString().split('T')[0];
-      const existing = breakdownMap.get(dateStr) ?? { amountCents: 0n, count: 0 };
+      let key = '';
+      if (view === 'daily') {
+        key = p.occurredAt.toISOString().split('T')[0];
+      } else {
+        // weekly
+        const d = new Date(p.occurredAt);
+        const day = d.getUTCDay();
+        const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d.setDate(diff));
+        key = monday.toISOString().split('T')[0];
+      }
+
+      const existing = breakdownMap.get(key) ?? { amountCents: 0n, count: 0 };
       existing.amountCents += p.amountCents;
       existing.count += 1;
-      breakdownMap.set(dateStr, existing);
-      totalCents += p.amountCents;
+      breakdownMap.set(key, existing);
+      checksumCents += p.amountCents;
     }
 
-    // Metric Drift Runtime Assertion: Validate breakdown total equals aggregate total
-    const summary = await this.computeCollected(startDate, endDate, source);
-    if (summary.totalRevenueCents !== totalCents) {
+    // Runtime checksum verification: Assert no drift between summary and breakdown sum
+    if (totalRevenueCents !== checksumCents) {
       throw new Error(
-        `Critical Metric Drift Detected! Summary: ${summary.totalRevenueCents}, Breakdown: ${totalCents}`,
+        `Critical Metric Drift Detected! Summary: ${totalRevenueCents}, Breakdown: ${checksumCents}`,
       );
     }
 
-    const breakdown: RevenueBreakdownEntry[] = Array.from(breakdownMap.entries()).map(
-      ([date, data]) => ({
-        date,
-        amountCents: data.amountCents,
-        count: data.count,
-      }),
-    );
+    const breakdown = Array.from(breakdownMap.entries()).map(([key, data]) => ({
+      date: key,
+      amountCents: data.amountCents,
+      count: data.count,
+    }));
 
     return {
-      totalRevenueCents: totalCents,
+      totalRevenueCents,
       currency: 'USD',
+      count: totalCount,
       breakdown,
     };
   }
 
-  /**
-   * Computes the weekly breakdown of collected revenue.
-   * Asserts no drift compared to computeCollected().
-   */
-  static async computeWeeklyBreakdown(startDate?: Date, endDate?: Date, source?: string): Promise<RevenueBreakdown> {
-    const where: any = {
-      status: { in: this.ALLOWED_REVENUE_STATUSES },
-    };
+  // Preserve signatures using the unified method for compatibility
+  static async computeCollected(startDate?: Date, endDate?: Date, source?: string) {
+    return this.computeRevenue('summary', startDate, endDate, source);
+  }
 
-    if (source) {
-      where.source = source;
-    }
+  static async computeDailyBreakdown(startDate?: Date, endDate?: Date, source?: string) {
+    return this.computeRevenue('daily', startDate, endDate, source);
+  }
 
-    if (startDate || endDate) {
-      where.occurredAt = {};
-      if (startDate) {
-        where.occurredAt.gte = startDate;
-      }
-      if (endDate) {
-        where.occurredAt.lte = endDate;
-      }
-    }
-
-    const payments = await withDbRetry(() =>
-      getPrisma().payment.findMany({
-        where,
-        select: { amountCents: true, occurredAt: true },
-        orderBy: { occurredAt: 'asc' },
-      }),
-    );
-
-    const breakdownMap = new Map<string, { amountCents: bigint; count: number }>();
-    let totalCents = 0n;
-
-    for (const p of payments) {
-      const d = new Date(p.occurredAt);
-      const day = d.getUTCDay();
-      const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-      const monday = new Date(d.setDate(diff));
-      const weekStr = monday.toISOString().split('T')[0];
-
-      const existing = breakdownMap.get(weekStr) ?? { amountCents: 0n, count: 0 };
-      existing.amountCents += p.amountCents;
-      existing.count += 1;
-      breakdownMap.set(weekStr, existing);
-      totalCents += p.amountCents;
-    }
-
-    // Validate breakdown total equals aggregate total
-    const summary = await this.computeCollected(startDate, endDate, source);
-    if (summary.totalRevenueCents !== totalCents) {
-      throw new Error(
-        `Critical Metric Drift Detected! Summary: ${summary.totalRevenueCents}, Breakdown: ${totalCents}`,
-      );
-    }
-
-    const breakdown: RevenueBreakdownEntry[] = Array.from(breakdownMap.entries()).map(
-      ([week, data]) => ({
-        date: week, // start day of week
-        amountCents: data.amountCents,
-        count: data.count,
-      }),
-    );
-
-    return {
-      totalRevenueCents: totalCents,
-      currency: 'USD',
-      breakdown,
-    };
+  static async computeWeeklyBreakdown(startDate?: Date, endDate?: Date, source?: string) {
+    return this.computeRevenue('weekly', startDate, endDate, source);
   }
 }
