@@ -101,6 +101,39 @@ async function runTests() {
     }
   }
 
+  // Case 8: GET /metrics/revenue/summary
+  try {
+    const res = await axios.get(`${BASE_URL}/metrics/revenue/summary`, {
+      headers: { 'X-Api-Key': API_KEY }
+    });
+    console.log('\n✅ Case 8: GET /metrics/revenue/summary - Passed');
+    console.log(`   Status: ${res.status}, Body: ${JSON.stringify(res.data)}`);
+  } catch (err: any) {
+    console.error('\n❌ Case 8: GET /metrics/revenue/summary - Failed', err.response?.data || err.message);
+  }
+
+  // Case 9: GET /metrics/revenue/daily
+  try {
+    const res = await axios.get(`${BASE_URL}/metrics/revenue/daily`, {
+      headers: { 'X-Api-Key': API_KEY }
+    });
+    console.log('\n✅ Case 9: GET /metrics/revenue/daily - Passed');
+    console.log(`   Status: ${res.status}, Body: ${JSON.stringify(res.data)}`);
+  } catch (err: any) {
+    console.error('\n❌ Case 9: GET /metrics/revenue/daily - Failed', err.response?.data || err.message);
+  }
+
+  // Case 10: GET /metrics/revenue/weekly
+  try {
+    const res = await axios.get(`${BASE_URL}/metrics/revenue/weekly`, {
+      headers: { 'X-Api-Key': API_KEY }
+    });
+    console.log('\n✅ Case 10: GET /metrics/revenue/weekly - Passed');
+    console.log(`   Status: ${res.status}, Body: ${JSON.stringify(res.data)}`);
+  } catch (err: any) {
+    console.error('\n❌ Case 10: GET /metrics/revenue/weekly - Failed', err.response?.data || err.message);
+  }
+
   console.log('\n=== SEQUENTIAL API TESTS COMPLETE ===');
 }
 

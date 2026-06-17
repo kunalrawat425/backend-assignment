@@ -31,8 +31,8 @@ export function buildTriggerRouter(): Router {
       const { source, mode } = req.params as unknown as z.infer<typeof triggerParams>;
       const cfg = ConfigService.get();
       const connectors = ConnectorFactory.build(cfg);
-      const match = connectors.find((c) => c.source === source);
-      if (!match) {
+      const matches = connectors.filter((c) => c.source === source);
+      if (matches.length === 0) {
         res.status(400).json({
           error: 'source_not_enabled',
           source,
@@ -40,12 +40,14 @@ export function buildTriggerRouter(): Router {
         });
         return;
       }
-      const runId = uuidv4();
-      // Return 202 immediately, run async so we never hit Render's 30s timeout.
-      res.status(202).json({ runId, source, mode, status: 'accepted' });
-      // Fire-and-forget; producer writes its own run_report row.
-      void runAsync(source, mode, match.connector).catch((err) => {
-        log.error({ runId, source, mode, err: err.message }, 'async_trigger_failed');
+      const primaryRunId = uuidv4();
+      res.status(202).json({ runId: primaryRunId, source, mode, status: 'accepted' });
+      
+      matches.forEach((match, idx) => {
+        const runId = idx === 0 ? primaryRunId : uuidv4();
+        void runAsync(source, mode, match.connector, runId).catch((err) => {
+          log.error({ runId, source, mode, entity: match.connector.entity, err: err.message }, 'async_trigger_failed');
+        });
       });
     },
   );
@@ -56,6 +58,7 @@ async function runAsync(
   source: SourceType,
   mode: 'full' | 'incremental',
   connector: Awaited<ReturnType<typeof ConnectorFactory.build>>[number]['connector'],
+  runId: string,
 ): Promise<void> {
   const cursors = new CursorService();
   const outbox = new OutboxService();
@@ -64,7 +67,7 @@ async function runAsync(
   if (mode === 'full') {
     await cursors.reset(source, connector.entity);
   }
-  await job.runOne(source, connector);
+  await job.runOne(source, connector, runId);
   void mode; // mode captured via cursor reset above
   void SyncMode; // pacify linter
 }
