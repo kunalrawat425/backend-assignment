@@ -295,6 +295,54 @@ If an individual raw payload fails to normalize repeatedly (e.g. because HubSpot
 All raw status names from external systems (such as `requires_capture`, `partially_refunded`, etc.) default to `UNKNOWN` if they are not explicitly present in the mapped status allow-list. Mappings must be updated inside the code to count them as collected revenue, ensuring no accidental numbers contaminate the metric aggregates.
 ---
 
+## 💀 Brutal Failure Mode & Recovery Analysis
+
+### 1. What Happens if the Consumer Crashes Mid-Execution?
+
+When `job:process` is processing a batch of records:
+1. **Advisory Claiming**: The script claims rows using `SELECT ... FOR UPDATE SKIP LOCKED` inside a PostgreSQL transaction.
+2. **Crash Scenario (SIGKILL, Out-of-Memory, Server Panic)**:
+   * **State in Outbox**: If the process crashes mid-batch, the database connection is abruptly severed. PostgreSQL detects the dead session and **automatically releases the row locks**. Since the rows were never marked `consumed` (which only happens at the very end of the batch transaction), their statuses remain `pending`.
+   * **State in Target Tables**: Some destination rows (e.g. `payments`) might have already been updated in the DB before the crash.
+   * **Re-run Behavior**: When the consumer script runs again, it claims the exact same `pending` rows.
+   * **Idempotency Guarantee**: Because all database writes are implemented as **Idempotent Upserts** (e.g., `ON CONFLICT (source, externalId) DO UPDATE`), reprocessing a partially written batch simply overwrites the records with the exact same data, avoiding double-insertions or duplicate revenue tracking.
+
+---
+
+### 2. What Happens if the Ingest Producer Crashes Mid-Page?
+
+When `job:fetch` is fetching paginated records from Stripe, HubSpot, or Google Calendar:
+1. **Paging Mechanics**: The job fetches page `N` from the external API, enqueues the records to `sync_ingest_outbox`, and **then** saves the `next_cursor` to the `sync_cursor` table.
+2. **Crash Scenario**: The job crashes mid-way through fetching a page (e.g., local server loses internet connection).
+   * **State in Database**: The database rolls back the active transaction. The cursor is **not** advanced to `next_cursor`.
+   * **Re-run Behavior**: Upon restart, the producer reads the old cursor and re-requests page `N`.
+   * **Outbox Deduping**: Since the outbox has a unique index on `(source, entity, external_id)`, the `insertMany` query uses `skipDuplicates: true` and ignores the records that were already enqueued. No duplicate payloads accumulate in the outbox.
+
+---
+
+### 3. Absolute Worst-Case Failures & Recovery
+
+#### **Worst Case A: DB Connection Flapping / Flapping Outage**
+* **The Failure**: The database connection drops in the middle of a transaction, comes back for 2 seconds, and drops again.
+* **System Behavior**: Instead of failing immediately, the system wraps all database operations in a retry runner `withDbRetry` that handles transient Prisma errors (`P1001`, `P2024`, `ECONNRESET`). It retries up to 5 times using exponential backoff with jitter. If the database remains offline after 5 retries, the job terminates cleanly, preserving transaction boundaries.
+
+#### **Worst Case B: Upstream API Floods Pipeline with Poison Pill Payloads**
+* **The Failure**: Stripe or HubSpot changes its payload schema unexpectedly, or sends corrupted data that fails Zod validation inside our normalizers.
+* **System Behavior**: 
+  1. The consumer process attempts to process the item.
+  2. The normalizer throws a Zod validation error, and the transaction rolls back.
+  3. The consumer increments the `attempts` counter for that specific outbox row in the database.
+  4. On retry, if it fails again, it repeats.
+  5. Once the attempt counter hits **5**, the processor automatically catches the error, writes a detailed error report to the `sync_dlq_log` (Dead Letter Queue) table along with the full raw payload, and marks the outbox status as `FAILED`.
+  6. The queue remains unblocked, and subsequent healthy payloads are processed.
+
+#### **Worst Case C: Complete Storage Exhaustion (Disk Full)**
+* **The Failure**: The database server runs out of disk space, making all inserts fail.
+* **System Behavior**: Both the ingestion (`job:fetch`) and processing (`job:process`) scripts crash immediately because they cannot write cursors or outbox statuses.
+* **Recovery**: Since all writes are transaction-safe, no partial or corrupted states are saved. Once disk space is freed, running the scripts resumes work from the last healthy cursors without any manual data cleaning required.
+
+---
+
 ## 🛡️ Component Downtime & Fault Tolerance Matrix
 
 What happens when parts of the system go down?
