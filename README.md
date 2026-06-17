@@ -184,7 +184,7 @@ Full vocabulary table including PayPal/Square/Adyen/Braintree/QuickBooks/Xero in
 ### Prerequisites
 - Node.js ≥ 20
 - pnpm 9 (or npm)
-- Docker (for local Postgres)
+- Docker (for local Postgres) or Supabase instance
 
 ### Bootstrap
 ```bash
@@ -193,11 +193,11 @@ pnpm install
 
 # 2. Copy env, fill in Stripe test-mode key + Supabase URL
 cp .env.example .env
-# edit .env: DATABASE_URL, API_KEY (any 32-char), ADMIN_API_KEY, STRIPE_API_KEY=sk_test_xxx
+# Edit .env: DATABASE_URL, API_KEY (any 32-char), ADMIN_API_KEY, STRIPE_API_KEY=sk_test_xxx
 
 # 3. Start local Postgres
 docker compose up -d
-# or use your Supabase URL directly
+# Or use your Supabase URL directly
 
 # 4. Apply migrations
 pnpm db:migrate:dev
@@ -210,51 +210,74 @@ pnpm test
 pnpm dev
 ```
 
-### Run a manual fetch from your local terminal
+### In-Depth Scenario Testing (Live Demo & Brutal Scenarios)
+
+We have created specialized scripts to execute happy paths, concurrent syncs, and edge cases (such as stale cursors or database outages):
+
+#### 1. Comprehensive System E2E Scenario
+Runs the full system scenario including happy path syncs 1-by-1 for all vendors, stale cursor detection/fallback to full backfill, and simultaneous ingestion.
 ```bash
-# Stripe charges → outbox → payments table
+# Seed Stripe test sandbox with 3 dummy charges
+pnpm tsx seeders/stripe-live-seeder.ts
+
+# Run the complete E2E scenario run (API trigger -> Outbox process -> DB insert verify)
+pnpm tsx run-e2e-scenario.ts
+```
+
+#### 2. Brutal System Scenarios
+Simulates database disconnections with exponential retry/backoff validation, concurrent advisory lock collisions, and poison message Dead Letter Queue (DLQ) routing.
+```bash
+pnpm tsx run-brutal-scenarios.ts
+```
+
+#### 3. Standard Ingest / Outbox Processing Commands
+```bash
+# Pull new records from all enabled sources into the outbox
 pnpm job:fetch
+
+# Drain, normalize, and write outbox items to final tables
 pnpm job:process
-
-# Or via API
-curl -X POST http://localhost:3000/trigger/stripe/incremental \
-  -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
-  -H "Idempotency-Key: $(uuidgen)"
-```
-
-### Verify idempotency
-```bash
-# Run twice in a row
-pnpm job:fetch && pnpm job:process
-pnpm job:fetch && pnpm job:process
-
-# Count payments — should be unchanged on second run
-psql $DATABASE_URL -c 'SELECT count(*) FROM payments;'
 ```
 
 ---
 
-## Test environment
+## Database Schema (Sync Prefix)
 
-- **Stripe test mode** — seeded via Stripe CLI:
-  ```bash
-  stripe trigger payment_intent.succeeded   # creates a real test charge
-  stripe trigger charge.refunded
-  ```
-- **Postgres** — `docker compose up postgres` (local) or Supabase free project.
+All project-specific tables reside in the `public` schema and are mapped with the `sync_` prefix to isolate them from other tables (e.g. `buyers`, `sellers`) present in the database:
+* `sync_payments`
+* `sync_contacts`
+* `sync_events`
+* `sync_sync_cursor`
+* `sync_ingest_outbox`
+* `sync_dlq_log`
+* `sync_run_reports`
+* `sync_api_idempotency`
 
 ---
 
-## Sprint plan (where we are)
+## Render Deployment
+
+Deployment is fully automated using the [deploy.sh](file:///deploy.sh) script. 
+1. Create a new **Web Service** on Render pointing to the `master` branch.
+2. Set **Build Command** to `./deploy.sh`.
+3. Set **Start Command** to `pnpm start`.
+4. Configure Cron Jobs on Render using:
+   * **Fetch Job** (`*/15 * * * *`): `node dist/src/jobs/producer.job.js`
+   * **Process Job** (`*/5 * * * *`): `node dist/src/jobs/processor.job.js`
+
+---
+
+## Sprint plan
 
 | Sprint | Scope | Status |
 |---|---|---|
 | S0 | Repo, config, logger, db, retry, prisma init | ✅ done |
 | S1 | Stripe connector + normalizer + outbox + producer + processor + base API | ✅ done |
-| S2 | HubSpot + GCal connectors, isolation tests, webhook idempotency | ⏭ next |
-| S3 | NotifierService + admin endpoints + edge-case integration tests | ⏭ |
+| S2 | HubSpot + GCal connectors, isolation tests, webhook idempotency | ✅ done |
+| S3 | NotifierService + admin endpoints + edge-case integration tests | ✅ done |
 | S4 | RevenueService (Task 2) + summary/breakdown endpoints + CI guard | ⏭ |
-| S5 | OpenAPI + Swagger UI + Postman collections + README polish + Render deploy | ⏭ |
+| S5 | OpenAPI + Swagger UI + Postman collections + README polish + Render deploy | ✅ done |
+
 
 ---
 
