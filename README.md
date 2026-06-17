@@ -370,21 +370,31 @@ What happens when parts of the system go down?
 
 ---
 
-## 🧪 Comprehensive Testing Strategy
+## 🧪 Comprehensive Testing Strategy & Production Simulation
 
 We maintain a rigorous multi-tier testing strategy ensuring system reliability under brutal workloads:
 
-1. **Unit Tests**:
-   * Verification of raw payload mapping rules (Zod schemas).
-   * Status mappings (validating allow-lists and `UNKNOWN` fallbacks).
-   * Retry logic timing checks.
-2. **Integration Tests**:
-   * Direct database queries executing outbox claims, updates, and metrics aggregates.
-   * HTTP API route tests (`supertest`) verifying schema validations, API-key authentication guards, and response payload formatting.
-3. **E2E & Failure Injection Tests (`run-brutal-scenarios.ts`)**:
-   * Simulates transient database disconnects during writes to verify retry policy.
-   * Tests concurrent advisory lock acquisitions to verify double-firing protection.
-   * Injects malicious payloads to verify DLQ redirection.
+### 1. Common Reasons for System Crashes
+* **Memory Exhaustion (OOM)**: Pulling massive datasets from upstream APIs into large in-memory arrays during deep sync backfills.
+* **Network & Connection Flapping**: Socket timeouts, rate limit blocks, or transient TCP packet drops while connecting to Stripe, HubSpot, Google Calendar, or the Supabase database.
+* **Concurrency Lockups & Race Conditions**: Multiple workers writing/updating the same entity tables concurrently, leading to database deadlocks.
+* **Validation Failures & Schema Drift**: Upstream APIs releasing unexpected payload shifts, causing JSON schema validations (Zod) to crash standard processors.
+
+### 2. Active Crash & Failure Injection Tests (`run-brutal-scenarios.ts`)
+We run automated scripts that intentionally trigger crashes and verify recovery:
+* **Database Connection Flapping Check**: Simulates packet loss during database queries. Asserts that `withDbRetry` intercepts the exception, executes exponential backoff, and resolves the query successfully on the 3rd attempt without crashing.
+* **Advisory Lock Double-Firing Check**: Simulates two concurrent transactions attempting to acquire the same Postgres advisory lock for `stripe:payments`. Asserts that the second transaction fails to acquire the lock immediately, preventing double syncs.
+* **Poison Pill Ingestion Check**: Inserts an invalid payment payload (unsupported currency 'EUR') with attempts set to 4. Asserts that the consumer catches the failure on the 5th attempt, writes a detailed error report to the `sync_dlq_log` (DLQ) table, and marks the outbox status as `FAILED` to unblock other messages.
+
+### 3. Load Testing & High-Volume Strategy
+* **Batching and Pagination**: We implement pagination with a page size of 50 to prevent OOM errors when processing millions of Stripe/Hubspot rows.
+* **Outbox Claim Limits**: The Outbox consumer claims entries in batches of `OUTBOX_BATCH_SIZE = 50` inside a loop instead of loading all pending rows, keeping the memory footprint constant.
+* **Database Connection Pooling**: Prisma Client is configured with direct connection limits (`connection_limit=5`) to prevent connection exhaustion.
+* **Throttling**: We implement Bottleneck rate-limiting queues to stay compliant with upstream API thresholds.
+
+### 4. Uncertain Situations Where Things Can Go Wrong
+* **Precision Loss on Large Integers**: If HubSpot deal values or Stripe charge amounts exceed JavaScript's max safe integer, precision loss occurs. We use `BigInt` (mapped to Postgres `bigint` and serialized safely as strings in API JSON) to keep exact cents accuracy.
+* **Timezone discrepancies**: If a third-party source sends timestamps without explicit offsets or local timezone formatting, daily/weekly aggregations could result in a 1-day metric shift. The system parses all ISO dates using strict UTC bounds (`toISOString().split('T')[0]`) to maintain timezone coherence across machines.
 
 ---
 
@@ -393,7 +403,6 @@ We maintain a rigorous multi-tier testing strategy ensuring system reliability u
 * **PostgreSQL Outbox instead of RabbitMQ**: RabbitMQ introduces broker downtime, message lost on unacknowledged connections, and out-of-order writes. Implementing an outbox table in Postgres allows the ingestion queue to share the same atomic transaction context as target tables.
 * **Static Analysis CI Guard (`check-single-revenue-impl.sh`)**: We built a custom shell scanner script that runs in CI. It fails the build if developer code attempts to duplicate status-based revenue queries outside of the canonical `RevenueService.ts`, enforcing the SSOT property automatically.
 * **Advisory Locks**: The cron jobs acquire database-level advisory transaction locks (`pg_try_advisory_xact_lock`). If multiple instances run simultaneously, they skip without throwing errors or locking table rows.
- as inflows). Optional `?net=true` endpoint deducts refunds.
 
 ---
 
