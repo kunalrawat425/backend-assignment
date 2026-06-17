@@ -40,9 +40,11 @@ export function buildHealthRouter(): Router {
         }
       }
     }
-    const allOk = db.ok && Object.values(sources).every((s) => s.ok);
-    res.status(allOk ? 200 : 503).json({
-      status: allOk ? 'ok' : 'degraded',
+    const isReady = db.ok;
+    const syncStatusOk = Object.values(sources).every((s) => s.ok);
+    res.status(isReady ? 200 : 503).json({
+      status: isReady ? 'ok' : 'degraded',
+      syncStatus: syncStatusOk ? 'healthy' : 'degraded',
       checks: { db, ...sources },
       uptimeS: Math.floor((Date.now() - STARTED_AT) / 1000),
     });
