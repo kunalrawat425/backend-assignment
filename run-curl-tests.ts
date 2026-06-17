@@ -2,8 +2,13 @@ import 'dotenv/config';
 import axios from 'axios';
 
 const BASE_URL = process.env.BASE_URL || 'https://backend-assignment-7in3.onrender.com';
-const API_KEY = process.env.API_KEY || 'f5d96a7ebcd7fbe4f691c28c894d0a1b';
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '9a7c3b2f5d1e4c7b8e0a1f2c3d4e5f6a';
+const API_KEY = process.env.API_KEY || '';
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
+
+if (!API_KEY || !ADMIN_API_KEY) {
+  console.error('ERROR: API_KEY and ADMIN_API_KEY must be configured in environment variables or a local .env file.');
+  process.exit(1);
+}
 
 async function runTests() {
   console.log('=== STARTING SEQUENTIAL API TEST SUITE ===\n');
