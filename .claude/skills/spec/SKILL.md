@@ -1,0 +1,1 @@
+/Users/kunalrawat/conductor/repos/backend-assignment/.claude/skills/gstack/spec/SKILL.md
