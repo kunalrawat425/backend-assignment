@@ -1,0 +1,354 @@
+{
+  "info": {
+    "name": "Buffalo Ingestion API",
+    "_postman_id": "buffalo-ingestion-v1",
+    "description": "Full API test collection for the Buffalo unified ingestion pipeline.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:3000", "type": "string" },
+    { "key": "API_KEY", "value": "replace-with-random-hex-32", "type": "string" },
+    { "key": "ADMIN_API_KEY", "value": "replace-with-random-hex-32-stronger", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /healthz — liveness",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/healthz",
+            "header": []
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"status\": \"ok\", \"uptimeS\": 421 }"
+            }
+          ]
+        },
+        {
+          "name": "GET /readyz — readiness",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/readyz",
+            "header": []
+          },
+          "response": [
+            {
+              "name": "200 all healthy",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"status\": \"ok\", \"checks\": { \"db\": { \"ok\": true, \"latencyMs\": 12 }, \"stripe\": { \"ok\": true, \"lastSync\": \"2026-06-17T09:00:00Z\" } }, \"uptimeS\": 421 }"
+            },
+            {
+              "name": "503 degraded",
+              "status": "Service Unavailable",
+              "code": 503,
+              "body": "{ \"status\": \"degraded\", \"checks\": { \"db\": { \"ok\": false, \"latencyMs\": 5000, \"error\": \"connection refused\" } }, \"uptimeS\": 42 }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ingest — Trigger",
+      "item": [
+        {
+          "name": "POST /trigger/stripe/incremental",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/stripe/incremental",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Idempotency-Key", "value": "trigger-stripe-inc-001" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"runId\": \"550e8400-e29b-41d4-a716-446655440000\", \"source\": \"stripe\", \"mode\": \"incremental\", \"status\": \"accepted\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /trigger/stripe/full — full backfill",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/stripe/full",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Idempotency-Key", "value": "trigger-stripe-full-001" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"runId\": \"660e8400-e29b-41d4-a716-446655440001\", \"source\": \"stripe\", \"mode\": \"full\", \"status\": \"accepted\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /trigger/hubspot/incremental",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/hubspot/incremental",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Idempotency-Key", "value": "trigger-hubspot-inc-001" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"runId\": \"770e8400-e29b-41d4-a716-446655440002\", \"source\": \"hubspot\", \"mode\": \"incremental\", \"status\": \"accepted\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /trigger/gcal/incremental",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/gcal/incremental",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Idempotency-Key", "value": "trigger-gcal-inc-001" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "202 Accepted",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"runId\": \"880e8400-e29b-41d4-a716-446655440003\", \"source\": \"gcal\", \"mode\": \"incremental\", \"status\": \"accepted\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /trigger — missing Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/stripe/incremental",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "400 Missing Idempotency-Key",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"idempotency_key_required\", \"message\": \"Header \\\"Idempotency-Key\\\" is required for POST requests\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /trigger — invalid source (400)",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/trigger/paypal/incremental",
+            "header": [
+              { "key": "X-Admin-Api-Key", "value": "{{ADMIN_API_KEY}}" },
+              { "key": "Idempotency-Key", "value": "trigger-invalid-001" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "response": [
+            {
+              "name": "400 Invalid source",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"validation_failed\", \"issues\": [{ \"in\": \"params\", \"field\": \"source\", \"message\": \"Invalid enum value\" }] }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Runs",
+      "item": [
+        {
+          "name": "GET /runs — list all",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/runs?limit=20",
+              "host": ["{{BASE_URL}}"],
+              "path": ["runs"],
+              "query": [{ "key": "limit", "value": "20" }]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 list",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"runs\": [{ \"runId\": \"550e8400-e29b-41d4-a716-446655440000\", \"source\": \"stripe\", \"entity\": \"payments\", \"mode\": \"INCREMENTAL\", \"startedAt\": \"2026-06-17T09:00:00Z\", \"finishedAt\": \"2026-06-17T09:00:12Z\", \"pagesFetched\": 2, \"recordsFetched\": 87, \"recordsUpserted\": 85, \"recordsDeduped\": 2, \"recordsFailed\": 0, \"staleCursorDetected\": false, \"fullBackfillTriggered\": false, \"failedRecords\": [], \"batches\": [] }], \"total\": 1 }"
+            }
+          ]
+        },
+        {
+          "name": "GET /runs?source=stripe — filter by source",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/runs?source=stripe&limit=10",
+              "host": ["{{BASE_URL}}"],
+              "path": ["runs"],
+              "query": [
+                { "key": "source", "value": "stripe" },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 filtered",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"runs\": [], \"total\": 0 }"
+            }
+          ]
+        },
+        {
+          "name": "GET /runs/:runId — get single",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/runs/550e8400-e29b-41d4-a716-446655440000",
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 run detail",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"runId\": \"550e8400-e29b-41d4-a716-446655440000\", \"source\": \"stripe\", \"entity\": \"payments\", \"mode\": \"INCREMENTAL\", \"recordsFailed\": 0, \"failedRecords\": [], \"batches\": [{\"batchId\": \"550e8400:p1\", \"size\": 50, \"status\": \"success\"}, {\"batchId\": \"550e8400:p2\", \"size\": 37, \"status\": \"success\"}] }"
+            },
+            {
+              "name": "404 not found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{ \"error\": \"run_not_found\" }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "POST /webhooks/stripe — charge.succeeded",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/webhooks/stripe",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=1234567890,v1=<computed_hmac>" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": \"evt_001\", \"type\": \"charge.succeeded\", \"data\": { \"object\": { \"id\": \"ch_live_001\", \"amount\": 9900, \"currency\": \"usd\", \"status\": \"succeeded\", \"created\": 1718611200 } } }"
+            }
+          },
+          "response": [
+            {
+              "name": "200 accepted",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"received\": true }"
+            },
+            {
+              "name": "400 invalid signature",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"webhook_signature_invalid\" }"
+            }
+          ]
+        },
+        {
+          "name": "POST /webhooks/stripe — charge.refunded",
+          "request": {
+            "method": "POST",
+            "url": "{{BASE_URL}}/webhooks/stripe",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=1234567890,v1=<computed_hmac>" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": \"evt_002\", \"type\": \"charge.refunded\", \"data\": { \"object\": { \"id\": \"ch_live_002\", \"amount\": 4900, \"currency\": \"usd\", \"status\": \"succeeded\", \"created\": 1718611300, \"refunds\": { \"data\": [{ \"id\": \"re_live_001\", \"amount\": 4900, \"currency\": \"usd\", \"status\": \"succeeded\", \"created\": 1718611400 }] } } } }"
+            }
+          },
+          "response": [
+            {
+              "name": "200 refund accepted",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"received\": true }"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Docs",
+      "item": [
+        {
+          "name": "GET /docs/openapi.json",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/docs/openapi.json",
+            "header": []
+          },
+          "response": [
+            {
+              "name": "200 OpenAPI spec",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"openapi\": \"3.1.0\", \"info\": { \"title\": \"Buffalo Ingestion API\" }, \"paths\": { ... } }"
+            }
+          ]
+        },
+        {
+          "name": "GET /docs — Swagger UI",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/docs",
+            "header": []
+          },
+          "response": [
+            {
+              "name": "200 Swagger HTML",
+              "status": "OK",
+              "code": 200,
+              "body": "<html>Swagger UI</html>"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+// Buffalo — unified ingestion + revenue metrics
+// Single Postgres schema, no RabbitMQ (outbox-only durability).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ===== Unified payment row =====
+model Payment {
+  id              String   @id @default(uuid()) @db.Uuid
+  source          String   // 'stripe' | 'hubspot' | 'gcal' (gcal never produces payments)
+  externalId      String   @map("external_id")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  amountCents     BigInt   @map("amount_cents")
+  currency        String   @db.Char(3)
+  status          String   // PaymentStatus enum stringified
+  rawStatus       String   @map("raw_status")
+  raw             Json
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+  ingestedAt      DateTime @default(now()) @map("ingested_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([source, externalId])
+  @@index([occurredAt])
+  @@index([status, occurredAt])
+  @@index([source, occurredAt])
+  @@map("sync_payments")
+}
+
+// ===== Unified contact row (HubSpot only for now) =====
+model Contact {
+  id             String   @id @default(uuid()) @db.Uuid
+  source         String
+  externalId     String   @map("external_id")
+  idempotencyKey String   @unique @map("idempotency_key")
+  email          String?
+  phone          String?
+  firstName      String   @default("") @map("first_name")
+  lastName       String   @default("") @map("last_name")
+  raw            Json
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(6)
+  ingestedAt     DateTime @default(now()) @map("ingested_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([source, externalId])
+  @@map("sync_contacts")
+}
+
+// ===== Unified event row (GCal) =====
+model Event {
+  id             String    @id @default(uuid()) @db.Uuid
+  source         String
+  externalId     String    @map("external_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  title          String    @default("")
+  description    String?
+  startAt        DateTime  @map("start_at") @db.Timestamptz(6)
+  endAt          DateTime? @map("end_at") @db.Timestamptz(6)
+  status         String    @default("confirmed")
+  raw            Json
+  occurredAt     DateTime  @map("occurred_at") @db.Timestamptz(6)
+  ingestedAt     DateTime  @default(now()) @map("ingested_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([source, externalId])
+  @@index([startAt])
+  @@map("sync_events")
+}
+
+// ===== Sync cursor per (source, entity) =====
+model SyncCursor {
+  source             String
+  entity             String   // 'payments' | 'contacts' | 'events'
+  cursor             String?
+  lastFullSyncAt     DateTime? @map("last_full_sync_at") @db.Timestamptz(6)
+  lastFullAttemptAt  DateTime? @map("last_full_attempt_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@id([source, entity])
+  @@map("sync_sync_cursor")
+}
+
+// ===== Outbox: every fetched raw record lands here first =====
+model IngestOutbox {
+  id           BigInt   @id @default(autoincrement())
+  source       String
+  entity       String
+  externalId   String   @map("external_id")
+  rawPayload   Json     @map("raw_payload")
+  status       String   @default("pending") // 'pending' | 'consumed' | 'failed'
+  attempts     Int      @default(0)
+  lastError    String?  @map("last_error")
+  runId        String   @map("run_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  consumedAt   DateTime? @map("consumed_at") @db.Timestamptz(6)
+
+  @@unique([source, entity, externalId, runId])
+  @@index([status, createdAt])
+  @@map("sync_ingest_outbox")
+}
+
+// ===== Dead-letter log for poison records =====
+model DlqLog {
+  id          BigInt   @id @default(autoincrement())
+  source      String
+  entity      String
+  externalId  String?  @map("external_id")
+  payload     Json
+  error       String
+  retryCount  Int      @map("retry_count")
+  runId       String?  @map("run_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([source, createdAt])
+  @@map("sync_dlq_log")
+}
+
+// ===== Run reports for the notifier =====
+model RunReport {
+  runId                  String   @id @map("run_id") @db.Uuid
+  source                 String
+  entity                 String
+  mode                   String   // 'incremental' | 'full'
+  startedAt              DateTime @map("started_at") @db.Timestamptz(6)
+  finishedAt             DateTime? @map("finished_at") @db.Timestamptz(6)
+  cursorBefore           String?  @map("cursor_before")
+  cursorAfter            String?  @map("cursor_after")
+  staleCursorDetected    Boolean  @default(false) @map("stale_cursor_detected")
+  fullBackfillTriggered  Boolean  @default(false) @map("full_backfill_triggered")
+  fullBackfillReason     String?  @map("full_backfill_reason")
+  pagesFetched           Int      @default(0) @map("pages_fetched")
+  recordsFetched         Int      @default(0) @map("records_fetched")
+  recordsUpserted        Int      @default(0) @map("records_upserted")
+  recordsDeduped         Int      @default(0) @map("records_deduped")
+  recordsFailed          Int      @default(0) @map("records_failed")
+  failedRecords          Json     @default("[]") @map("failed_records")
+  batches                Json     @default("[]")
+  unmappedStatusesSeen   String[] @default([]) @map("unmapped_statuses_seen")
+  status                 String   @default("running") // running | success | failed | partial
+  notifiedAt             DateTime? @map("notified_at") @db.Timestamptz(6)
+
+  @@index([source, startedAt])
+  @@map("sync_run_reports")
+}
+
+// ===== API idempotency cache =====
+model ApiIdempotency {
+  key          String   @id
+  routeKey     String   @map("route_key")
+  responseBody Json     @map("response_body")
+  statusCode   Int      @map("status_code")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("sync_api_idempotency")
+}
