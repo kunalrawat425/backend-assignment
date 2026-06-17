@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = 'https://backend-assignment-7in3.onrender.com';
 const API_KEY = 'f5d96a7ebcd7fbe4f691c28c894d0a1b';
 const ADMIN_API_KEY = '9a7c3b2f5d1e4c7b8e0a1f2c3d4e5f6a';
 

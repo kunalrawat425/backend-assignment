@@ -77,7 +77,7 @@ To run live API checks using Postman:
 1. **Import the Collection**: In Postman, click **Import** and paste the raw URL: `https://raw.githubusercontent.com/kunalrawat425/backend-assignment/master/postman/buffalo.postman_collection.json` (or select the local file [postman/buffalo.postman_collection.json](./postman/buffalo.postman_collection.json) from your cloned project directory).
 2. **Configure Variables**:
    Under the Collection settings (Variables tab), set the following variables:
-   * `BASE_URL`: Server endpoint (e.g. `http://localhost:3000` for local or your Render live URL).
+   * `BASE_URL`: Server endpoint (e.g. `http://localhost:3000` for local or `https://backend-assignment-7in3.onrender.com` for your Render live URL).
    * `API_KEY`: Set to `f5d96a7ebcd7fbe4f691c28c894d0a1b` (or your production API key).
    * `ADMIN_API_KEY`: Set to `9a7c3b2f5d1e4c7b8e0a1f2c3d4e5f6a` (or your production Admin key).
 3. **Run Requests**: You can run individual routes or use the Collection Runner to sequentially test liveness, readiness, sync triggers, and drift-free revenue views.
