@@ -27,9 +27,10 @@ export class GCalConnector extends BaseConnector<GCalEvent> {
   constructor(clientEmail: string, privateKey: string, calendarId: string) {
     super();
     this.calendarId = calendarId;
+    const cleanKey = privateKey.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
     const auth = new google.auth.JWT({
       email: clientEmail,
-      key: privateKey.replace(/\\n/g, '\n'),
+      key: cleanKey,
       scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
     });
     this.calendar = google.calendar({ version: 'v3', auth });
