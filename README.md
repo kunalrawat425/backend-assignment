@@ -74,7 +74,7 @@ If external APIs fail or are rate-limited, the system status is reported as degr
 ## 📥 Postman Integration & Live Testing
 
 To run live API checks using Postman:
-1. **Import the Collection**: Import the JSON file located at [postman/buffalo.postman_collection.json](./postman/buffalo.postman_collection.json) into Postman (in Postman, click **Import**, select this file from your cloned project directory, or drag-and-drop it).
+1. **Import the Collection**: In Postman, click **Import** and paste the raw URL: `https://raw.githubusercontent.com/kunalrawat425/backend-assignment/master/postman/buffalo.postman_collection.json` (or select the local file [postman/buffalo.postman_collection.json](./postman/buffalo.postman_collection.json) from your cloned project directory).
 2. **Configure Variables**:
    Under the Collection settings (Variables tab), set the following variables:
    * `BASE_URL`: Server endpoint (e.g. `http://localhost:3000` for local or your Render live URL).
