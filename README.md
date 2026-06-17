@@ -71,6 +71,19 @@ If external APIs fail or are rate-limited, the system status is reported as degr
 
 ---
 
+## 📥 Postman Integration & Live Testing
+
+To run live API checks using Postman:
+1. **Import the Collection**: Import the JSON file located in [postman/buffalo.postman_collection.json](file:///Users/kunalrawat/conductor/repos/backend-assignment/postman/buffalo.postman_collection.json) into Postman.
+2. **Configure Variables**:
+   Under the Collection settings (Variables tab), set the following variables:
+   * `BASE_URL`: Server endpoint (e.g. `http://localhost:3000` for local or your Render live URL).
+   * `API_KEY`: Set to `f5d96a7ebcd7fbe4f691c28c894d0a1b` (or your production API key).
+   * `ADMIN_API_KEY`: Set to `9a7c3b2f5d1e4c7b8e0a1f2c3d4e5f6a` (or your production Admin key).
+3. **Run Requests**: You can run individual routes or use the Collection Runner to sequentially test liveness, readiness, sync triggers, and drift-free revenue views.
+
+---
+
 ## ⚡ Setup & Installation
 
 ### Prerequisites
