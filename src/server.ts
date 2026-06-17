@@ -8,6 +8,8 @@ import { buildTriggerRouter } from './api/ingest/trigger.controller';
 import { buildRunsRouter } from './api/ingest/runs.controller';
 import { buildWebhookRouter } from './api/ingest/webhook.controller';
 import { buildDocsRouter } from './openapi/docs.router';
+import { buildRevenueRouter } from './api/metrics/revenue.controller';
+import { buildUnmappedRouter } from './api/metrics/unmapped.controller';
 
 export function buildApp(): Express {
   const app = express();
@@ -47,6 +49,8 @@ export function buildApp(): Express {
   app.use(buildDocsRouter());
   app.use(buildTriggerRouter());
   app.use(buildRunsRouter());
+  app.use(buildRevenueRouter());
+  app.use(buildUnmappedRouter());
 
   app.use(notFoundHandler);
   app.use(errorHandler);

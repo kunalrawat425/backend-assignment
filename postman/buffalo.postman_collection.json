@@ -349,6 +349,156 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Metrics — Revenue",
+      "item": [
+        {
+          "name": "GET /metrics/revenue — summary (all sources)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue"],
+              "query": [
+                { "key": "from", "value": "2026-01-01T00:00:00Z" },
+                { "key": "to", "value": "2026-12-31T23:59:59Z" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 summary",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"totalCollectedCents\": \"209800\", \"txnCount\": 4, \"from\": \"2026-01-01T00:00:00.000Z\", \"to\": \"2026-12-31T23:59:59.000Z\", \"source\": null }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue — summary (stripe only)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z&source=stripe",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue"],
+              "query": [
+                { "key": "from", "value": "2026-01-01T00:00:00Z" },
+                { "key": "to", "value": "2026-12-31T23:59:59Z" },
+                { "key": "source", "value": "stripe" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 stripe only",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"totalCollectedCents\": \"14800\", \"txnCount\": 2, \"from\": \"2026-01-01T00:00:00.000Z\", \"to\": \"2026-12-31T23:59:59.000Z\", \"source\": \"stripe\" }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue/breakdown — monthly",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue/breakdown?granularity=month&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue", "breakdown"],
+              "query": [
+                { "key": "granularity", "value": "month" },
+                { "key": "from", "value": "2026-01-01T00:00:00Z" },
+                { "key": "to", "value": "2026-12-31T23:59:59Z" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 monthly breakdown",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"granularity\": \"month\", \"from\": \"2026-01-01T00:00:00.000Z\", \"to\": \"2026-12-31T23:59:59.000Z\", \"source\": null, \"totalCollectedCents\": \"209800\", \"totalTxnCount\": 4, \"buckets\": [{ \"bucketStart\": \"2026-06-01T00:00:00.000Z\", \"collectedCents\": \"209800\", \"txnCount\": 4 }] }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue/breakdown — daily",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue/breakdown?granularity=day&from=2026-06-01T00:00:00Z&to=2026-06-30T23:59:59Z",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue", "breakdown"],
+              "query": [
+                { "key": "granularity", "value": "day" },
+                { "key": "from", "value": "2026-06-01T00:00:00Z" },
+                { "key": "to", "value": "2026-06-30T23:59:59Z" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 daily with zero buckets",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"granularity\": \"day\", \"totalCollectedCents\": \"209800\", \"totalTxnCount\": 4, \"buckets\": [{ \"bucketStart\": \"2026-06-15T00:00:00.000Z\", \"collectedCents\": \"209800\", \"txnCount\": 4 }, { \"bucketStart\": \"2026-06-16T00:00:00.000Z\", \"collectedCents\": \"0\", \"txnCount\": 0 }] }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/revenue — 400 range > 366 days",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/revenue?from=2024-01-01T00:00:00Z&to=2026-12-31T23:59:59Z",
+              "host": ["{{BASE_URL}}"],
+              "path": ["metrics", "revenue"],
+              "query": [
+                { "key": "from", "value": "2024-01-01T00:00:00Z" },
+                { "key": "to", "value": "2026-12-31T23:59:59Z" }
+              ]
+            },
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "400 range too large",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"date_range_too_large: max 366 days\" }"
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics/unmapped-statuses — ops endpoint",
+          "request": {
+            "method": "GET",
+            "url": "{{BASE_URL}}/metrics/unmapped-statuses",
+            "header": [{ "key": "X-Api-Key", "value": "{{API_KEY}}" }]
+          },
+          "response": [
+            {
+              "name": "200 unmapped list",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"count\": 1, \"statuses\": [{ \"source\": \"hubspot\", \"rawStatus\": \"decisionmakerbuyin\", \"count\": 2, \"sample\": \"deal_abc123\" }] }"
+            },
+            {
+              "name": "200 empty — all statuses mapped",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"count\": 0, \"statuses\": [] }"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

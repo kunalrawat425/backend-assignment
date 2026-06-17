@@ -2,8 +2,6 @@
 
 Backend assignment: a sync pipeline that doesn't lie or duplicate data (Problem 1) and a revenue metrics service that never drifts (Problem 2).
 
-> **Status**: Task 1 (Ingestion) — Stripe end-to-end built. HubSpot + Google Calendar connectors, notifier, metrics service, OpenAPI docs land in subsequent sprints (see `Sprint plan` below).
-
 ---
 
 ## Architecture (one Express service, Postgres outbox for durability)

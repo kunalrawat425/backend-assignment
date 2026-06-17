@@ -18,5 +18,10 @@ export function errorHandler(
     'unhandled_error',
   );
   if (res.headersSent) return;
-  res.status(500).json({ error: 'internal_error', requestId: req.requestId });
+  const status = (err as unknown as { statusCode?: number }).statusCode ?? 500;
+  const isClientError = status >= 400 && status < 500;
+  res.status(status).json({
+    error: isClientError ? err.message : 'internal_error',
+    requestId: req.requestId,
+  });
 }

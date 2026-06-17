@@ -238,5 +238,182 @@ export const openApiDoc = {
         },
       },
     },
+    '/metrics/revenue': {
+      get: {
+        summary: 'Collected revenue summary for a date range',
+        tags: ['Metrics'],
+        security: [{ ApiKey: [] }],
+        parameters: [
+          {
+            name: 'from',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+            description: 'ISO 8601 start (inclusive), e.g. 2026-01-01T00:00:00Z',
+          },
+          {
+            name: 'to',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+            description: 'ISO 8601 end (exclusive), e.g. 2026-06-30T23:59:59Z',
+          },
+          {
+            name: 'source',
+            in: 'query',
+            schema: { type: 'string', enum: ['stripe', 'hubspot', 'gcal'] },
+            description: 'Filter to one source (optional)',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Revenue summary',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    totalCollectedCents: { type: 'string', example: '159900' },
+                    txnCount: { type: 'integer', example: 3 },
+                    from: { type: 'string', format: 'date-time' },
+                    to: { type: 'string', format: 'date-time' },
+                    source: { type: 'string', nullable: true },
+                  },
+                },
+                example: {
+                  totalCollectedCents: '159900',
+                  txnCount: 3,
+                  from: '2026-01-01T00:00:00.000Z',
+                  to: '2026-06-30T23:59:59.000Z',
+                  source: null,
+                },
+              },
+            },
+          },
+          '400': { description: 'Invalid date range or range > 366 days' },
+          '401': { description: 'Missing or invalid API key' },
+        },
+      },
+    },
+    '/metrics/revenue/breakdown': {
+      get: {
+        summary: 'Collected revenue broken down by time bucket — totals ALWAYS match /metrics/revenue',
+        tags: ['Metrics'],
+        security: [{ ApiKey: [] }],
+        parameters: [
+          {
+            name: 'granularity',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', enum: ['day', 'week', 'month'] },
+          },
+          {
+            name: 'from',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+          },
+          {
+            name: 'to',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+          },
+          {
+            name: 'source',
+            in: 'query',
+            schema: { type: 'string', enum: ['stripe', 'hubspot', 'gcal'] },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Revenue breakdown — sum(buckets.collectedCents) === totalCollectedCents',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    granularity: { type: 'string', enum: ['day', 'week', 'month'] },
+                    from: { type: 'string', format: 'date-time' },
+                    to: { type: 'string', format: 'date-time' },
+                    source: { type: 'string', nullable: true },
+                    totalCollectedCents: { type: 'string' },
+                    totalTxnCount: { type: 'integer' },
+                    buckets: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          bucketStart: { type: 'string', format: 'date-time' },
+                          collectedCents: { type: 'string' },
+                          txnCount: { type: 'integer' },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  granularity: 'month',
+                  from: '2026-01-01T00:00:00.000Z',
+                  to: '2026-06-30T23:59:59.000Z',
+                  source: null,
+                  totalCollectedCents: '159900',
+                  totalTxnCount: 3,
+                  buckets: [
+                    { bucketStart: '2026-01-01T00:00:00.000Z', collectedCents: '9900', txnCount: 1 },
+                    { bucketStart: '2026-02-01T00:00:00.000Z', collectedCents: '0', txnCount: 0 },
+                    { bucketStart: '2026-06-01T00:00:00.000Z', collectedCents: '150000', txnCount: 2 },
+                  ],
+                },
+              },
+            },
+          },
+          '400': { description: 'Missing granularity or invalid range' },
+        },
+      },
+    },
+    '/metrics/unmapped-statuses': {
+      get: {
+        summary: 'Ops — list payment rows with status=UNKNOWN (unmapped raw statuses)',
+        tags: ['Metrics'],
+        security: [{ ApiKey: [] }],
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 50, maximum: 200 } },
+        ],
+        responses: {
+          '200': {
+            description: 'Unmapped status groups',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    count: { type: 'integer' },
+                    statuses: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          source: { type: 'string' },
+                          rawStatus: { type: 'string' },
+                          count: { type: 'integer' },
+                          sample: { type: 'string', description: 'Sample external_id for debugging' },
+                        },
+                      },
+                    },
+                  },
+                },
+                example: {
+                  count: 1,
+                  statuses: [
+                    { source: 'stripe', rawStatus: 'partially_funded', count: 3, sample: 'ch_abc123' },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
 };

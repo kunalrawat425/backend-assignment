@@ -42,15 +42,14 @@ export class ProducerJob {
     source: SourceType,
     connector: BaseConnector<unknown>,
   ): Promise<RunReportDraft> {
-    const cfg = ConfigService.get();
     const entity = connector.entity;
     const draft = this.reports.start(source, entity, SyncMode.INCREMENTAL);
     const runLog: typeof log = log.child({ runId: draft.runId, source, entity });
 
     // Cron double-fire protection — advisory lock per (source, entity)
-    const lockAcquired = await getPrisma().$transaction(async (tx) => {
-      return await this.cursors.tryAcquireRunLock(tx, source, entity);
-    });
+    const lockAcquired = await getPrisma().$transaction((tx) =>
+      this.cursors.tryAcquireRunLock(tx, source, entity),
+    );
     if (!lockAcquired) {
       runLog.warn({}, 'run_lock_busy_skipping');
       draft.finishedAt = new Date();
@@ -58,43 +57,8 @@ export class ProducerJob {
     }
 
     try {
-      const cursorBefore = await this.cursors.get(source, entity);
-      draft.cursorBefore = cursorBefore;
-      runLog.info({ cursor: cursorBefore }, 'producer_start');
-      try {
-        await this.executeIncremental(connector, cursorBefore, draft, runLog);
-      } catch (err) {
-        if (err instanceof StaleCursorError) {
-          draft.staleCursorDetected = true;
-          draft.fullBackfillReason = err.reason;
-          runLog.warn({ reason: err.reason }, 'stale_cursor_detected');
-          const allowed = await this.cursors.canAttemptFullBackfill(
-            source,
-            entity,
-            cfg.FULL_BACKFILL_MIN_INTERVAL_MIN,
-          );
-          if (!allowed) {
-            runLog.warn({}, 'full_backfill_rate_limited');
-            this.reports.recordFailure(draft, {
-              externalId: null,
-              stage: 'fetch',
-              error: `stale_cursor_but_rate_limited: ${err.reason}`,
-              rawPreview: '',
-            });
-            return draft;
-          }
-          await this.cursors.reset(source, entity);
-          draft.fullBackfillTriggered = true;
-          draft.mode = SyncMode.FULL;
-          runLog.info({}, 'full_backfill_starting');
-          await this.executeFull(connector, draft, runLog);
-          await this.cursors.markFullSyncCompleted(source, entity);
-        } else {
-          throw err;
-        }
-      }
-      const cursorAfter = await this.cursors.get(source, entity);
-      draft.cursorAfter = cursorAfter;
+      await this.executeWithFallback(connector, draft, runLog);
+      draft.cursorAfter = await this.cursors.get(source, entity);
     } catch (err) {
       runLog.error({ err: (err as Error).message }, 'producer_failed');
       this.reports.recordFailure(draft, {
@@ -120,6 +84,47 @@ export class ProducerJob {
       );
     }
     return draft;
+  }
+
+  private async executeWithFallback(
+    connector: BaseConnector<unknown>,
+    draft: RunReportDraft,
+    runLog: typeof log,
+  ): Promise<void> {
+    const cfg = ConfigService.get();
+    const { source, entity } = connector;
+    const cursorBefore = await this.cursors.get(source, entity);
+    draft.cursorBefore = cursorBefore;
+    runLog.info({ cursor: cursorBefore }, 'producer_start');
+    try {
+      await this.executeIncremental(connector, cursorBefore, draft, runLog);
+    } catch (err) {
+      if (!(err instanceof StaleCursorError)) throw err;
+      draft.staleCursorDetected = true;
+      draft.fullBackfillReason = err.reason;
+      runLog.warn({ reason: err.reason }, 'stale_cursor_detected');
+      const allowed = await this.cursors.canAttemptFullBackfill(
+        source,
+        entity,
+        cfg.FULL_BACKFILL_MIN_INTERVAL_MIN,
+      );
+      if (!allowed) {
+        runLog.warn({}, 'full_backfill_rate_limited');
+        this.reports.recordFailure(draft, {
+          externalId: null,
+          stage: 'fetch',
+          error: `stale_cursor_but_rate_limited: ${err.reason}`,
+          rawPreview: '',
+        });
+        return;
+      }
+      await this.cursors.reset(source, entity);
+      draft.fullBackfillTriggered = true;
+      draft.mode = SyncMode.FULL;
+      runLog.info({}, 'full_backfill_starting');
+      await this.executeFull(connector, draft, runLog);
+      await this.cursors.markFullSyncCompleted(source, entity);
+    }
   }
 
   private async executeIncremental(
