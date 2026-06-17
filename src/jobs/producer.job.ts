@@ -41,9 +41,10 @@ export class ProducerJob {
   async runOne(
     source: SourceType,
     connector: BaseConnector<unknown>,
+    runId?: string,
   ): Promise<RunReportDraft> {
     const entity = connector.entity;
-    const draft = this.reports.start(source, entity, SyncMode.INCREMENTAL);
+    const draft = this.reports.start(source, entity, SyncMode.INCREMENTAL, runId);
     const runLog: typeof log = log.child({ runId: draft.runId, source, entity });
 
     // Cron double-fire protection — advisory lock per (source, entity)

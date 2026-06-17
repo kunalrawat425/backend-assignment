@@ -5,9 +5,9 @@ import { EntityType, RunStatus, SourceType, SyncMode } from '../types/enums';
 import { BatchOutcome, FailedRecord, RunReportDraft } from '../types/unified';
 
 export class RunReportService {
-  start(source: SourceType, entity: EntityType, mode: SyncMode): RunReportDraft {
+  start(source: SourceType, entity: EntityType, mode: SyncMode, runId?: string): RunReportDraft {
     return {
-      runId: uuidv4(),
+      runId: runId ?? uuidv4(),
       source,
       entity,
       mode,

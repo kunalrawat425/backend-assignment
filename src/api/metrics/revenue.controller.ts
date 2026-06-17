@@ -1,70 +1,109 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { apiKeyGuard } from '../../auth/api-key.guard';
 import { validate } from '../../middleware/validate';
-import { RevenueService } from '../../revenue/revenue.service';
-import { PaymentRepo, Granularity } from '../../repos/payment.repo';
+import { RevenueService } from '../../repos/revenue.service';
+import { childLogger } from '../../logger/logger.service';
 
-const SOURCES = ['stripe', 'hubspot', 'gcal'] as const;
+const log = childLogger({ component: 'revenue.controller' });
 
-const summaryQuery = z.object({
-  from: z.string().datetime({ offset: true, message: 'from must be ISO 8601 with timezone' }),
-  to: z.string().datetime({ offset: true, message: 'to must be ISO 8601 with timezone' }),
-  source: z.enum(SOURCES).optional(),
+const querySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD format required').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD format required').optional(),
+  source: z.string().optional(),
 });
-
-const breakdownQuery = summaryQuery.extend({
-  granularity: z.enum(['day', 'week', 'month'] as [Granularity, ...Granularity[]]),
-});
-
-// Module-level singleton — stateless repos, safe to share
-const service = new RevenueService(new PaymentRepo());
 
 export function buildRevenueRouter(): Router {
-  const router = Router();
+  const r = Router();
 
-  // All routes in this router require API key
-  router.use(apiKeyGuard);
-
-  // GET /metrics/revenue — summary
-  router.get(
-    '/metrics/revenue',
-    validate({ query: summaryQuery }),
-    async (req: Request, res: Response, next: NextFunction) => {
+  r.get(
+    '/metrics/revenue/summary',
+    apiKeyGuard,
+    validate({ query: querySchema }),
+    async (req: Request, res: Response) => {
+      const { startDate, endDate, source } = req.query as unknown as z.infer<typeof querySchema>;
+      log.info({ startDate, endDate, source }, 'revenue_summary_requested');
       try {
-        // validate() middleware mutates req.query to the parsed output — cast is safe
-        const q = req.query as unknown as z.infer<typeof summaryQuery>;
-        const result = await service.summary({
-          from: new Date(q.from),
-          to: new Date(q.to),
-          source: q.source,
+        const start = startDate ? new Date(startDate) : undefined;
+        const end = endDate ? new Date(endDate) : undefined;
+
+        const summary = await RevenueService.computeCollected(start, end, source);
+        res.status(200).json({
+          totalRevenueCents: summary.totalRevenueCents.toString(),
+          currency: summary.currency,
+          count: summary.count,
+          startDate: startDate || null,
+          endDate: endDate || null,
+          source: source || null,
         });
-        res.json(result);
-      } catch (err) {
-        next(err);
+      } catch (err: any) {
+        log.error({ startDate, endDate, source, err: err.message }, 'revenue_summary_failed');
+        res.status(500).json({ error: 'internal_error', message: err.message });
       }
     },
   );
 
-  // GET /metrics/revenue/breakdown — bucketed
-  router.get(
-    '/metrics/revenue/breakdown',
-    validate({ query: breakdownQuery }),
-    async (req: Request, res: Response, next: NextFunction) => {
+  r.get(
+    '/metrics/revenue/daily',
+    apiKeyGuard,
+    validate({ query: querySchema }),
+    async (req: Request, res: Response) => {
+      const { startDate, endDate, source } = req.query as unknown as z.infer<typeof querySchema>;
+      log.info({ startDate, endDate, source }, 'revenue_daily_requested');
       try {
-        const q = req.query as unknown as z.infer<typeof breakdownQuery>;
-        const result = await service.breakdown({
-          from: new Date(q.from),
-          to: new Date(q.to),
-          source: q.source,
-          granularity: q.granularity as Granularity,
+        const start = startDate ? new Date(startDate) : undefined;
+        const end = endDate ? new Date(endDate) : undefined;
+
+        const breakdown = await RevenueService.computeDailyBreakdown(start, end, source);
+        res.status(200).json({
+          totalRevenueCents: breakdown.totalRevenueCents.toString(),
+          currency: breakdown.currency,
+          breakdown: breakdown.breakdown.map((b) => ({
+            date: b.date,
+            amountCents: b.amountCents.toString(),
+            count: b.count,
+          })),
+          startDate: startDate || null,
+          endDate: endDate || null,
+          source: source || null,
         });
-        res.json(result);
-      } catch (err) {
-        next(err);
+      } catch (err: any) {
+        log.error({ startDate, endDate, source, err: err.message }, 'revenue_daily_failed');
+        res.status(500).json({ error: 'internal_error', message: err.message });
       }
     },
   );
 
-  return router;
+  r.get(
+    '/metrics/revenue/weekly',
+    apiKeyGuard,
+    validate({ query: querySchema }),
+    async (req: Request, res: Response) => {
+      const { startDate, endDate, source } = req.query as unknown as z.infer<typeof querySchema>;
+      log.info({ startDate, endDate, source }, 'revenue_weekly_requested');
+      try {
+        const start = startDate ? new Date(startDate) : undefined;
+        const end = endDate ? new Date(endDate) : undefined;
+
+        const breakdown = await RevenueService.computeWeeklyBreakdown(start, end, source);
+        res.status(200).json({
+          totalRevenueCents: breakdown.totalRevenueCents.toString(),
+          currency: breakdown.currency,
+          breakdown: breakdown.breakdown.map((b) => ({
+            weekStartDate: b.date,
+            amountCents: b.amountCents.toString(),
+            count: b.count,
+          })),
+          startDate: startDate || null,
+          endDate: endDate || null,
+          source: source || null,
+        });
+      } catch (err: any) {
+        log.error({ startDate, endDate, source, err: err.message }, 'revenue_weekly_failed');
+        res.status(500).json({ error: 'internal_error', message: err.message });
+      }
+    },
+  );
+
+  return r;
 }
